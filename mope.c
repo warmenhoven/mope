@@ -43,7 +43,8 @@ typedef struct _list {
 	void *data;
 } list;
 
-static list *list_new(void *data)
+static list *
+list_new(void *data)
 {
 	list *l = malloc(sizeof (list));
 	l->prev = NULL;
@@ -52,7 +53,8 @@ static list *list_new(void *data)
 	return (l);
 }
 
-static unsigned int list_length(list *l)
+static unsigned int
+list_length(list *l)
 {
 	unsigned int c = 0;
 
@@ -64,7 +66,8 @@ static unsigned int list_length(list *l)
 	return (c);
 }
 
-static void *list_nth(list *l, int n)
+static void *
+list_nth(list *l, int n)
 {
 	while (l && n) {
 		l = l->next;
@@ -74,7 +77,8 @@ static void *list_nth(list *l, int n)
 	return (NULL);
 }
 
-static list *list_append(list *l, void *data)
+static list *
+list_append(list *l, void *data)
 {
 	list *s = l;
 
@@ -87,7 +91,8 @@ static list *list_append(list *l, void *data)
 	return (l);
 }
 
-static list *list_prepend(list *l, void *data)
+static list *
+list_prepend(list *l, void *data)
 {
 	list *s = list_new(data);
 	s->next = l;
@@ -96,7 +101,8 @@ static list *list_prepend(list *l, void *data)
 	return (s);
 }
 
-static list *list_insert(list *l, void *data, int pos)
+static list *
+list_insert(list *l, void *data, int pos)
 {
 	list *c = l, *t;
 	int len;
@@ -119,7 +125,8 @@ static list *list_insert(list *l, void *data, int pos)
 	return (l);
 }
 
-static list *list_remove(list *l, void *data)
+static list *
+list_remove(list *l, void *data)
 {
 	list *s = l, *p = NULL;
 
@@ -145,18 +152,8 @@ static list *list_remove(list *l, void *data)
 	return (l);
 }
 
-/*
-static void list_free(list *l)
-{
-	while (l) {
-		list *s = l;
-		l = l->next;
-		free(s);
-	}
-}
-*/
-
-static list *read_playlist(list *play, char *path)
+static list *
+read_playlist(list *play, char *path)
 {
 	DIR *d;
 	struct dirent *ent;
@@ -182,7 +179,8 @@ static list *read_playlist(list *play, char *path)
 	return (play);
 }
 
-static list *rand_playlist(list *playlist)
+static list *
+rand_playlist(list *playlist)
 {
 	list *nl = NULL;
 	int l = list_length(playlist);
@@ -199,7 +197,8 @@ static list *rand_playlist(list *playlist)
 	return (nl);
 }
 
-static char *lower(char *w)
+static char *
+lower(char *w)
 {
 	char *x = strdup(w);
 	char *s = x;
@@ -210,7 +209,8 @@ static char *lower(char *w)
 	return (x);
 }
 
-static list *find_song(list *playlist, list *cur_song, char *words)
+static list *
+find_song(list *playlist, list *cur_song, char *words)
 {
 	list *l = cur_song->next;
 
@@ -254,7 +254,8 @@ static list *find_song(list *playlist, list *cur_song, char *words)
 	return (l);
 }
 
-static int create_socket()
+static int
+create_socket()
 {
 	int listenfd;
 	const int on = 1;
@@ -291,7 +292,8 @@ static int create_socket()
 	return (listenfd);
 }
 
-static void process(int argc, char **argv)
+static void
+process(int argc, char **argv)
 {
 	struct sockaddr_in saddr;
 	struct hostent *hp;
@@ -411,13 +413,185 @@ static void process(int argc, char **argv)
 
 static pid_t chld = -1;
 
-static void sigint(int sig)
+static void
+sigint(int sig)
 {
 	if (chld > 0) {
 		kill(chld, SIGCONT);
 		kill(chld, SIGTERM);
 	}
 	exit(0);
+}
+
+static inline void
+kill_chld(int paused)
+{
+	kill(chld, SIGTERM);
+	if (paused)
+		kill(chld, SIGCONT);
+	usleep(20000);
+}
+
+
+static int
+process_cmd(int sock,
+			list **cur_song, list **playlist,
+			int *stopped, int *paused, int *mod)
+{
+	fd_set set;
+	struct timeval tv, *stv;
+	struct sockaddr_in saddr;
+	int len = sizeof (saddr), pos;
+	int fd;
+	char cmd;
+	char *title;
+	list *tmp_list;
+
+	if (*stopped) {
+		stv = NULL;
+	} else {
+		tv.tv_sec = 0;
+		tv.tv_usec = 100000;
+		stv = &tv;
+	}
+
+	FD_ZERO(&set);
+	FD_SET(sock, &set);
+	if ((select(sock + 1, &set, NULL, NULL, stv) <= 0) ||
+		((fd = accept(sock, (struct sockaddr *)&saddr, &len)) == -1))
+		return (0);
+
+	read(fd, &cmd, 1);
+	switch (cmd) {
+	case PAUSE:
+		if (!*stopped) {
+			if (*paused)
+				kill(chld, SIGCONT);
+			else
+				kill(chld, SIGSTOP);
+			*paused = !*paused;
+		}
+		break;
+	case STOP:
+		if (!*stopped) {
+			kill_chld(*paused);
+			*stopped = 1;
+			*paused = 0;
+			*mod = 0;
+		}
+		break;
+	case PREV:
+		if (!*stopped) {
+			kill_chld(*paused);
+			*paused = 0;
+			*mod = 0;
+		}
+		*cur_song = (*cur_song)->prev;
+		if (!*cur_song)
+			*cur_song = *playlist = rand_playlist(*playlist);
+		break;
+	case NEXT:
+		if (!*stopped) {
+			kill_chld(*paused);
+			*paused = 0;
+			*mod = 0;
+		}
+		*cur_song = (*cur_song)->next;
+		if (!cur_song)
+			*cur_song = *playlist = rand_playlist(*playlist);
+		break;
+	case PLAY:
+		if (!*stopped) {
+			kill_chld(*paused);
+		}
+		*paused = 0;
+		*mod = 0;
+		*stopped = 0;
+		break;
+	case JUMP:
+		if (read(fd, &len, sizeof (len)) != sizeof (len))
+			break;
+		if (len > 256)
+			break;
+		title = malloc(len + 1);
+		len = read(fd, title, len);
+		if (len < 0) {
+			free(title);
+			break;
+		}
+		title[len] = 0;
+		tmp_list = find_song(*playlist, *cur_song, title);
+		if (tmp_list) {
+			*cur_song = tmp_list;
+			if (!*stopped) {
+				kill_chld(*paused);
+				paused = 0;
+				mod = 0;
+			}
+		}
+		free(title);
+		break;
+	case TITLE:
+		title = strdup(strrchr((*cur_song)->data, '/'));
+		title[strlen(title) - 4] = '\n';
+		title[strlen(title) - 3] = 0;
+		if (*stopped)
+			title[0] = 0;
+		else
+			title[0] = 1;
+		write(fd, title, strlen(title + 1) + 1);
+		free(title);
+		break;
+	case ADD:
+		read(fd, &len, sizeof (len));
+		if (len > 256)
+			break;
+		title = malloc(len + 1);
+		len = read(fd, title, len);
+		if (len < 0) {
+			free(title);
+			break;
+		}
+		title[len] = 0;
+		srand(time(NULL));
+		*playlist = list_insert(*playlist, title,
+							   rand() % list_length(*playlist));
+		break;
+	case LIST:
+		tmp_list = *cur_song;
+		len = 5;
+		while (tmp_list->next && len < 11) {
+			tmp_list = tmp_list->next;
+			len++;
+		}
+		while (tmp_list->prev && len) {
+			tmp_list = tmp_list->prev;
+			len--;
+		}
+		cmd = 1;
+		write(fd, &cmd, 1);
+		pos = list_length(*playlist) - list_length(tmp_list);
+		len = 0;
+		while (tmp_list && len < 11) {
+			char m[10];
+			title = strrchr(tmp_list->data, '/');
+			title++;
+			snprintf(m, 10, "%d. ", pos + len);
+			write(fd, m, strlen(m));
+			write(fd, title, strlen(title) - 4);
+			write(fd, "\n", 1);
+			len++;
+			tmp_list = tmp_list->next;
+		}
+		break;
+	case EXIT:
+		if (!*stopped) {
+			kill_chld(*paused);
+		}
+		return (1);
+	}
+	close(fd);
+	return (0);
 }
 
 int
@@ -479,115 +653,19 @@ main(int argc, char **argv)
 #endif
 
 	while (1) {
-		int stop = 0;
+		int stopped = 0;
 		list *cur_song;
 		playlist = rand_playlist(playlist);
 		cur_song = playlist;
 
 		while (cur_song) {
 			int paused = 0;
-			int mod = 1;
+			int mod;
 
-			while (stop) {
-				fd_set set;
-				struct sockaddr_in saddr;
-				int len = sizeof (saddr), pos;
-				int fd;
-				char cmd;
-				char *title;
-				list *tmp_list;
-
-				FD_ZERO(&set);
-				FD_SET(sock, &set);
-				if ((select(sock + 1, &set, NULL, NULL, NULL) <= 0) ||
-				   ((fd = accept(sock, (struct sockaddr *)&saddr, &len)) == -1))
-					continue;
-
-				read(fd, &cmd, 1);
-				switch (cmd) {
-				case PREV:
-					cur_song = cur_song->prev;
-					if (!cur_song)
-						cur_song = playlist = rand_playlist(playlist);
-					break;
-				case NEXT:
-					cur_song = cur_song->next;
-					if (!cur_song)
-						cur_song = playlist = rand_playlist(playlist);
-					break;
-				case PLAY:
-					stop = 0;
-					break;
-				case JUMP:
-					if (read(fd, &len, sizeof (len)) != sizeof (len))
-						break;
-					if (len > 256)
-						break;
-					title = malloc(len + 1);
-					len = read(fd, title, len);
-					if (len < 0) {
-						free(title);
-						break;
-					}
-					title[len] = 0;
-					tmp_list = find_song(playlist, cur_song, title);
-					if (tmp_list) cur_song = tmp_list;
-					free(title);
-					break;
-				case TITLE:
-					title = strdup(strrchr(cur_song->data, '/'));
-					title[strlen(title) - 4] = '\n';
-					title[strlen(title) - 3] = 0;
-					title[0] = 0;
-					write(fd, title, strlen(title + 1) + 1);
-					free(title);
-					break;
-				case ADD:
-					read(fd, &len, sizeof (len));
-					if (len > 256)
-						break;
-					title = malloc(len + 1);
-					len = read(fd, title, len);
-					if (len < 0) {
-						free(title);
-						break;
-					}
-					title[len] = 0;
-					srand(time(NULL));
-					playlist = list_insert(playlist, title,
-								rand() % list_length(playlist));
-					break;
-				case EXIT:
+			while (stopped) {
+				if (process_cmd(sock, &cur_song, &playlist,
+								&stopped, &paused, &mod))
 					return (0);
-				case LIST:
-					tmp_list = cur_song;
-					len = 5;
-					while (tmp_list->next && len < 11) {
-						tmp_list = tmp_list->next;
-						len++;
-					}
-					while (tmp_list->prev && len) {
-						tmp_list = tmp_list->prev;
-						len--;
-					}
-					cmd = 1;
-					write(fd, &cmd, 1);
-					pos = list_length(playlist) - list_length(tmp_list);
-					len = 0;
-					while (tmp_list && len < 11) {
-						char m[10];
-						title = strrchr(tmp_list->data, '/');
-						title++;
-						snprintf(m, 10, "%d. ", pos + len);
-						write(fd, m, strlen(m));
-						write(fd, title, strlen(title) - 4);
-						write(fd, "\n", 1);
-						len++;
-						tmp_list = tmp_list->next;
-					}
-					break;
-				}
-				close(fd);
 			}
 
 			if (!(chld = fork())) {
@@ -613,147 +691,12 @@ main(int argc, char **argv)
 				_exit(0);
 			}
 
+			mod = 1;
+
 			while (!waitpid(chld, NULL, WNOHANG)) {
-				fd_set set;
-				struct timeval tv;
-				struct sockaddr_in saddr;
-				int len = sizeof (saddr), pos;
-				int fd;
-				char c;
-				char *title;
-				list *tmp_list;
-
-				tv.tv_sec = 0;
-				tv.tv_usec = 100000;
-				FD_ZERO(&set);
-				FD_SET(sock, &set);
-				if ((select(sock + 1, &set, NULL, NULL, &tv) <= 0) ||
-				   ((fd = accept(sock, (struct sockaddr *)&saddr, &len)) == -1))
-					continue;
-
-				read(fd, &c, 1);
-				switch (c) {
-				case PAUSE:
-					if (paused)
-						kill(chld, SIGCONT);
-					else
-						kill(chld, SIGSTOP);
-					paused = !paused;
-					break;
-				case STOP:
-					kill(chld, SIGTERM);
-					if (paused)
-						kill(chld, SIGCONT);
-					stop = 1;
-					paused = 0;
-					mod = 0;
-					break;
-				case PREV:
-					kill(chld, SIGTERM);
-					if (paused)
-						kill(chld, SIGCONT);
-					usleep(20000);
-					cur_song = cur_song->prev;
-					paused = 0;
-					mod = 0;
-					break;
-				case NEXT:
-					kill(chld, SIGTERM);
-					if (paused)
-						kill(chld, SIGCONT);
-					usleep(20000);
-					cur_song = cur_song->next;
-					paused = 0;
-					mod = 0;
-					break;
-				case PLAY:
-					kill(chld, SIGTERM);
-					if (paused)
-						kill(chld, SIGCONT);
-					usleep(20000);
-					paused = 0;
-					mod = 0;
-					break;
-				case JUMP:
-					if (read(fd, &len, sizeof (len)) != sizeof (len))
-						break;
-					if (len > 256)
-						break;
-					title = malloc(len + 1);
-					len = read(fd, title, len);
-					if (len < 0) {
-						free(title);
-						break;
-					}
-					title[len] = 0;
-					tmp_list = find_song(playlist, cur_song, title);
-					if (tmp_list) {
-						cur_song = tmp_list;
-						kill(chld, SIGTERM);
-						if (paused)
-							kill(chld, SIGCONT);
-						usleep(20000);
-						paused = 0;
-						mod = 0;
-					}
-					free(title);
-					break;
-				case TITLE:
-					title = strdup(strrchr(cur_song->data, '/'));
-					title[strlen(title) - 4] = '\n';
-					title[strlen(title) - 3] = 0;
-					title[0] = 1;
-					write(fd, title, strlen(title + 1) + 1);
-					free(title);
-					break;
-				case ADD:
-					if (read(fd, &len, sizeof (len)) != sizeof (len))
-						break;
-					title = malloc(len + 1);
-					len = read(fd, title, len);
-					if (len < 0) {
-						free(title);
-						break;
-					}
-					title[len] = 0;
-					srand(time(NULL));
-					playlist = list_insert(playlist, title,
-								rand() % list_length(playlist));
-					break;
-				case EXIT:
-					kill(chld, SIGTERM);
-					if (paused)
-						kill(chld, SIGCONT);
+				if (process_cmd(sock, &cur_song, &playlist,
+								&stopped, &paused, &mod))
 					return (0);
-				case LIST:
-					tmp_list = cur_song;
-					len = 5;
-					while (tmp_list->next && len < 11) {
-						tmp_list = tmp_list->next;
-						len++;
-					}
-					while (tmp_list->prev && len) {
-						tmp_list = tmp_list->prev;
-						len--;
-					}
-					c = 1;
-					write(fd, &c, 1);
-					pos = list_length(playlist) - list_length(tmp_list);
-					len = 0;
-					while (tmp_list && len < 11) {
-						char m[10];
-						title = strrchr(tmp_list->data, '/');
-						title++;
-						snprintf(m, 10, "%d. ", pos + len);
-						write(fd, m, strlen(m));
-						write(fd, title, strlen(title) - 4);
-						write(fd, "\n", 1);
-						len++;
-						tmp_list = tmp_list->next;
-					}
-					break;
-				}
-				close(fd);
 			}
 
 			chld = -1;
