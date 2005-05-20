@@ -49,7 +49,7 @@ static list *list_new(void *data)
 	l->prev = NULL;
 	l->next = NULL;
 	l->data = data;
-	return l;
+	return (l);
 }
 
 static unsigned int list_length(list *l)
@@ -61,7 +61,7 @@ static unsigned int list_length(list *l)
 		c++;
 	}
 
-	return c;
+	return (c);
 }
 
 static void *list_nth(list *l, int n)
@@ -71,7 +71,7 @@ static void *list_nth(list *l, int n)
 		n--;
 	}
 	if (l) return l->data;
-	return NULL;
+	return (NULL);
 }
 
 static list *list_append(list *l, void *data)
@@ -84,7 +84,7 @@ static list *list_append(list *l, void *data)
 	s->next = list_new(data);
 	s->next->prev = s;
 
-	return l;
+	return (l);
 }
 
 static list *list_prepend(list *l, void *data)
@@ -93,7 +93,7 @@ static list *list_prepend(list *l, void *data)
 	s->next = l;
 	if (l)
 		l->prev = s;
-	return s;
+	return (s);
 }
 
 static list *list_insert(list *l, void *data, int pos)
@@ -102,11 +102,11 @@ static list *list_insert(list *l, void *data, int pos)
 	int len;
 
 	if (pos <= 0)
-		return list_prepend(l, data);
+		return (list_prepend(l, data));
 
 	len = list_length(l);
 	if (pos > len)
-		return list_append(l, data);
+		return (list_append(l, data));
 
 	while (--pos)
 		c = c->next;
@@ -116,7 +116,7 @@ static list *list_insert(list *l, void *data, int pos)
 	c->next->next = t;
 	t->prev = c->next;
 
-	return l;
+	return (l);
 }
 
 static list *list_remove(list *l, void *data)
@@ -129,7 +129,7 @@ static list *list_remove(list *l, void *data)
 		if (p)
 			p->prev = NULL;
 		free(s);
-		return p;
+		return (p);
 	}
 	while (s->next) {
 		p = s;
@@ -139,10 +139,10 @@ static list *list_remove(list *l, void *data)
 			if (p->next)
 				p->next->prev = p;
 			free(s);
-			return l;
+			return (l);
 		}
 	}
-	return l;
+	return (l);
 }
 
 /*
@@ -162,11 +162,11 @@ static list *read_playlist(list *play, char *path)
 	struct dirent *ent;
 
 	if (!(d = opendir(path)))
-		return play;
+		return (play);
 	while ((ent = readdir(d))) {
 		struct stat s;
 		char *x;
-		if (!strcmp(ent->d_name, ".") || !strcmp(ent->d_name, ".."))
+		if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0)
 			continue;
 		x = malloc(strlen(path) + strlen(ent->d_name) + 1);
 		sprintf(x, "%s/%s", path, ent->d_name);
@@ -179,7 +179,7 @@ static list *read_playlist(list *play, char *path)
 	}
 	closedir(d);
 
-	return play;
+	return (play);
 }
 
 static list *rand_playlist(list *playlist)
@@ -196,7 +196,7 @@ static list *rand_playlist(list *playlist)
 		nl = list_append(nl, x);
 	}
 
-	return nl;
+	return (nl);
 }
 
 static char *lower(char *w)
@@ -207,7 +207,7 @@ static char *lower(char *w)
 		*s = tolower(*s);
 		s++;
 	}
-	return x;
+	return (x);
 }
 
 static list *find_song(list *playlist, list *cur_song, char *words)
@@ -231,7 +231,7 @@ static list *find_song(list *playlist, list *cur_song, char *words)
 	}
 
 	if (l)
-		return l;
+		return (l);
 
 	l = playlist;
 
@@ -251,7 +251,7 @@ static list *find_song(list *playlist, list *cur_song, char *words)
 		l = l->next;
 	}
 
-	return l;
+	return (l);
 }
 
 static int create_socket()
@@ -266,7 +266,7 @@ static int create_socket()
 	hints.ai_socktype = SOCK_STREAM;
 	if (getaddrinfo(HOST, PORT, &hints, &res) != 0) {
 		perror("getaddrinfo");
-		return -1;
+		return (-1);
 	}
 	ressave = res;
 	do {
@@ -277,18 +277,18 @@ static int create_socket()
 		if (bind(listenfd, res->ai_addr, res->ai_addrlen) == 0)
 			break;
 		close(listenfd);
-	} while ( (res = res->ai_next) );
+	} while ((res = res->ai_next));
 
 	if (!res)
-		return -1;
+		return (-1);
 
-	if (listen(listenfd, 1024)!=0) {
+	if (listen(listenfd, 1024) != 0) {
 		perror("listen");
-		return -1;
+		return (-1);
 	}
 
 	freeaddrinfo(ressave);
-	return listenfd;
+	return (listenfd);
 }
 
 static void process(int argc, char **argv)
@@ -420,7 +420,8 @@ static void sigint(int sig)
 	exit(0);
 }
 
-int main(int argc, char **argv)
+int
+main(int argc, char **argv)
 {
 	list *playlist;
 	int sock;
@@ -435,27 +436,27 @@ int main(int argc, char **argv)
 
 	if (argc < 2) {
 		if ((sock = create_socket()) < 0)
-			return 1;
+			return (1);
 	} else {
 		process(argc, argv);
-		return 0;
+		return (0);
 	}
 
 	if (!(playlist = read_playlist(NULL, PATH)))
-		return 2;
+		return (2);
 
 	if (fork())
-		return 0;
+		return (0);
 
 #ifdef ICES2
 	fclose(stderr);
 
 	if (pipe(pfd) == -1)
-		return 0;
+		return (0);
 
 	ices = fork();
 	if (ices < 0)
-		return 0;
+		return (0);
 	if (ices == 0) {
 		char *args[8];
 		int a = 0;
@@ -499,11 +500,11 @@ int main(int argc, char **argv)
 				FD_ZERO(&set);
 				FD_SET(sock, &set);
 				if ((select(sock + 1, &set, NULL, NULL, NULL) <= 0) ||
-				    ((fd = accept(sock, (struct sockaddr *)&saddr, &len)) == -1))
+				   ((fd = accept(sock, (struct sockaddr *)&saddr, &len)) == -1))
 					continue;
 
 				read(fd, &cmd, 1);
-				switch(cmd) {
+				switch (cmd) {
 				case PREV:
 					cur_song = cur_song->prev;
 					if (!cur_song)
@@ -557,7 +558,7 @@ int main(int argc, char **argv)
 								rand() % list_length(playlist));
 					break;
 				case EXIT:
-					return 0;
+					return (0);
 				case LIST:
 					tmp_list = cur_song;
 					len = 5;
@@ -627,11 +628,11 @@ int main(int argc, char **argv)
 				FD_ZERO(&set);
 				FD_SET(sock, &set);
 				if ((select(sock + 1, &set, NULL, NULL, &tv) <= 0) ||
-				    ((fd = accept(sock, (struct sockaddr *)&saddr, &len)) == -1))
+				   ((fd = accept(sock, (struct sockaddr *)&saddr, &len)) == -1))
 					continue;
 
 				read(fd, &c, 1);
-				switch(c) {
+				switch (c) {
 				case PAUSE:
 					if (paused)
 						kill(chld, SIGCONT);
@@ -723,7 +724,7 @@ int main(int argc, char **argv)
 					kill(chld, SIGTERM);
 					if (paused)
 						kill(chld, SIGCONT);
-					return 0;
+					return (0);
 				case LIST:
 					tmp_list = cur_song;
 					len = 5;
@@ -762,3 +763,5 @@ int main(int argc, char **argv)
 		}
 	}
 }
+
+/* vim:set sw=4 ts=4 noet cin ai tw=80: */
