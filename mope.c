@@ -525,8 +525,8 @@ process_cmd(int sock,
 			*cur_song = tmp_list;
 			if (!*stopped) {
 				kill_chld(*paused);
-				paused = 0;
-				mod = 0;
+				*paused = 0;
+				*mod = 0;
 			}
 		}
 		free(title);
